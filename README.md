@@ -270,3 +270,7 @@ python build.py --onedir
 - 建议安装最新版 `yt-dlp` 与 `ffmpeg` 以提升成功率
 - 某些站点需要登录态，请使用 `cookies.txt` 或 `--browser`
 - Cookies 会过期，如遇到之前可用的站点突然失败，请重新导出 `cookies.txt`
+
+## 致谢
+
+本项目借助 [Cursor](https://cursor.com) AI 辅助开发。
