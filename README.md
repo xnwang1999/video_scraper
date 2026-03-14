@@ -5,12 +5,22 @@
 ## 功能特性
 
 - **主流站点支持**: 基于 `yt-dlp`，覆盖大多数公开视频站点
+- **音视频分离下载**: 自动处理音视频分离的资源（如 B站），下载后自动合并为完整视频
 - **多线程 m3u8 下载**: 并发下载分片，支持 AES-128 加密流自动解密
 - **智能回退**: `yt-dlp` 失败时自动回退到页面直链提取 + ffmpeg 下载
 - **列表页批量发现**: 从列表页/首页自动提取资源链接，支持自定义正则和 CSS 选择器
 - **实时进度显示**: 下载速度、已下载大小、耗时、分片进度
 - **登录态支持**: 支持 `cookies.txt` 或从浏览器读取 cookies
 - **跨平台打包**: 支持打包为 Windows/Linux/macOS 可执行文件（内嵌 ffmpeg）
+
+## 预编译可执行文件
+
+`dist/` 目录提供预编译的可执行文件，无需安装 Python 环境即可使用：
+
+| 平台 | 文件 |
+|------|------|
+| Linux (x86_64) | `dist/video_scraper` |
+| Windows (x64) | `dist/video_scraper.exe` |
 
 ## 项目结构
 
@@ -182,9 +192,79 @@ python build.py --onedir
 - **lxml**: XML/HTML 解析器
 - **ffmpeg**: 视频格式转换与 m3u8 处理
 
+## Cookies 配置（重要）
+
+部分视频网站（如 **B站 bilibili**）启用了反爬机制，未携带有效 Cookie 会返回 `HTTP 412` 错误，导致提取和下载失败。以下是配置 Cookies 的详细步骤。
+
+### 方法一：导出 cookies.txt 文件（推荐）
+
+适用于所有平台（Windows / Linux / macOS），尤其是 **WSL 用户**（WSL 无法直接读取 Windows 浏览器的 Cookie 数据库）。
+
+#### 第 1 步：安装浏览器扩展
+
+根据你使用的浏览器，安装对应的 Cookie 导出扩展：
+
+| 浏览器 | 扩展名称 | 安装链接 |
+|--------|---------|---------|
+| Chrome | Get cookies.txt LOCALLY | [Chrome Web Store](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) |
+| Edge | Get cookies.txt LOCALLY | [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/get-cookiestxt-locally/jajhpmkncogjbjibbbpdofodndhmchgh) |
+| Firefox | cookies.txt | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/) |
+
+> **注意**：请确保导出的是 **Netscape 格式**（文件开头应有 `# Netscape HTTP Cookie File`），而非 JSON 格式。
+
+#### 第 2 步：导出 Cookie
+
+1. 打开浏览器，访问目标网站（如 `bilibili.com`）并**登录账号**
+2. 点击扩展图标，选择 **Export** / **导出**
+3. 将导出的文件保存为 `cookies.txt`
+
+#### 第 3 步：放置文件
+
+将 `cookies.txt` 放到以下任一位置：
+
+- 与 `video_scraper` 可执行文件**同级目录**（默认查找路径）
+- 或通过 `--cookies-file` 参数指定路径：
+
+```bash
+./video_scraper "URL" --download --cookies-file /path/to/cookies.txt
+```
+
+#### 导出文件格式示例
+
+正确的 Netscape 格式 `cookies.txt` 内容类似：
+
+```
+# Netscape HTTP Cookie File
+.bilibili.com	TRUE	/	FALSE	1735689600	buvid3	xxxxxxxx-xxxx-xxxx-xxxx
+.bilibili.com	TRUE	/	FALSE	1735689600	SESSDATA	xxxxxxxxxxxxxx
+.bilibili.com	TRUE	/	FALSE	1735689600	bili_jct	xxxxxxxxxxxxxx
+```
+
+### 方法二：从浏览器自动读取（非 WSL 环境）
+
+如果你在本机（非 WSL）运行，可以直接从浏览器读取 Cookie：
+
+```bash
+./video_scraper "URL" --download --browser chrome
+```
+
+`--browser` 支持的选项：`chrome` / `firefox` / `safari` / `edge` / `chromium`
+
+> **WSL 用户注意**：WSL 下无法访问 Windows 浏览器的 Cookie 数据库，请使用方法一导出 `cookies.txt`。
+
+### 需要 Cookies 的常见站点
+
+| 站点 | 是否必须 | 说明 |
+|------|---------|------|
+| B站 (bilibili) | ✅ 必须 | 未携带 Cookie 会返回 HTTP 412，无法访问 |
+| YouTube | ⚠️ 部分需要 | 年龄限制 / 会员视频需要登录态 |
+| Instagram / X(Twitter) | ⚠️ 部分需要 | 私密内容需要登录态 |
+| 其他公开站点 | ❌ 不需要 | 公开内容通常无需 Cookie |
+
 ## 注意事项
 
 - 仅用于下载公开可访问的视频内容
 - 请遵守目标网站服务条款与当地法律法规
 - 建议安装最新版 `yt-dlp` 与 `ffmpeg` 以提升成功率
 - 某些站点需要登录态，请使用 `cookies.txt` 或 `--browser`
+- Cookies 会过期，如遇到之前可用的站点突然失败，请重新导出 `cookies.txt`

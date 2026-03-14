@@ -180,6 +180,8 @@ class VideoScraper:
         if m:
             max_h = m.group(1)
             return f"bestvideo[height<={max_h}]+bestaudio/best[height<={max_h}]/best"
+        if quality in ("best", "worst"):
+            return f"{quality}video+{quality}audio/{quality}"
         return self.quality
 
     def _build_ydl_opts(self, download: bool = False, output_path: str = "./downloads/") -> Dict:

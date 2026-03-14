@@ -1,5 +1,4 @@
 build/
-dist/
 ffmpeg_bin/
 __pycache__/
 *.pyc
@@ -8,3 +7,4 @@ __pycache__/
 video_data.json
 cookies.txt
 downloads/
+.omc/
