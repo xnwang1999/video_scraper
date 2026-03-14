@@ -4,7 +4,8 @@
 在目标平台上运行即可生成对应平台的可执行文件。
 
 用法：
-    python build.py                     # 默认 onefile，自动下载 ffmpeg
+    python build.py                     # 默认 onefile CLI 版本，自动下载 ffmpeg
+    python build.py --gui               # 构建 GUI 版本
     python build.py --onedir            # onedir 模式（更快启动）
     python build.py --use-system-ffmpeg # 用系统已安装的 ffmpeg
     python build.py --no-ffmpeg         # 不捆绑 ffmpeg
@@ -124,68 +125,59 @@ def download_ffmpeg(plat: str) -> Path:
     return target
 
 
-def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool = False):
-    plat = detect_platform()
-    print(f"平台: {plat}")
-
-    ffmpeg_path = None
-    if no_ffmpeg:
-        print("跳过 ffmpeg 捆绑")
-    elif use_system_ffmpeg:
-        ffmpeg_path = copy_system_ffmpeg()
-    else:
-        ffmpeg_path = download_ffmpeg(plat)
-
-    cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--name", "video_scraper",
-    ]
-
-    if ffmpeg_path:
-        sep = ";" if sys.platform == "win32" else ":"
-        cmd.extend(["--add-binary", f"{ffmpeg_path}{sep}ffmpeg"])
-
+def _common_excludes(gui: bool = False) -> list:
     excludes = [
         "torch", "torchvision", "torchaudio",
         "numpy", "scipy", "sklearn", "pandas",
         "matplotlib", "PIL", "Pillow",
         "IPython", "jupyter", "notebook",
-        "tkinter", "test", "unittest",
+        "test", "unittest",
         "tensorboard", "sympy",
         "nvidia", "triton",
         "openpyxl", "pytest",
     ]
+    if not gui:
+        excludes.append("tkinter")
+    return excludes
 
-    cmd.extend([
-        "--hidden-import", "yt_dlp",
-        "--hidden-import", "Crypto",
-        "--hidden-import", "Crypto.Cipher",
-        "--hidden-import", "Crypto.Cipher.AES",
-        "--hidden-import", "bs4",
-        "--hidden-import", "tqdm",
-        "--hidden-import", "requests",
-        "--hidden-import", "lxml",
-        "--noconfirm",
-        "--clean",
-    ])
+
+def _run_pyinstaller(
+    entry: Path,
+    name: str,
+    onedir: bool,
+    ffmpeg_path: Path | None,
+    hidden_imports: list,
+    excludes: list,
+    extra_args: list | None = None,
+):
+    cmd = [sys.executable, "-m", "PyInstaller", "--name", name]
+
+    if ffmpeg_path:
+        sep = ";" if sys.platform == "win32" else ":"
+        cmd.extend(["--add-binary", f"{ffmpeg_path}{sep}ffmpeg"])
+
+    for mod in hidden_imports:
+        cmd.extend(["--hidden-import", mod])
+
+    cmd.extend(["--noconfirm", "--clean"])
+
     for mod in excludes:
         cmd.extend(["--exclude-module", mod])
 
-    if onedir:
-        cmd.append("--onedir")
-    else:
-        cmd.append("--onefile")
+    if extra_args:
+        cmd.extend(extra_args)
 
-    cmd.append(str(ROOT / "video_scraper.py"))
+    cmd.append("--onedir" if onedir else "--onefile")
+    cmd.append(str(entry))
 
     print(f"运行: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, cwd=str(ROOT))
 
     dist = ROOT / "dist"
     if onedir:
-        output = dist / "video_scraper"
+        output = dist / name
     else:
-        exe_name = "video_scraper.exe" if sys.platform == "win32" else "video_scraper"
+        exe_name = f"{name}.exe" if sys.platform == "win32" else name
         output = dist / exe_name
 
     if output.exists():
@@ -198,13 +190,56 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
         print(f"\n警告: 未找到输出文件 {output}")
 
 
+def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool = False, gui: bool = False):
+    plat = detect_platform()
+    print(f"平台: {plat}")
+
+    ffmpeg_path = None
+    if no_ffmpeg:
+        print("跳过 ffmpeg 捆绑")
+    elif use_system_ffmpeg:
+        ffmpeg_path = copy_system_ffmpeg()
+    else:
+        ffmpeg_path = download_ffmpeg(plat)
+
+    cli_hidden = [
+        "yt_dlp", "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
+        "bs4", "tqdm", "requests", "lxml",
+    ]
+
+    if gui:
+        print("\n===== 构建 GUI 版本 =====")
+        gui_hidden = cli_hidden + ["customtkinter"]
+        windowed = ["--windowed"] if sys.platform != "linux" else []
+        _run_pyinstaller(
+            entry=ROOT / "video_scraper_gui.py",
+            name="video_scraper_gui",
+            onedir=onedir,
+            ffmpeg_path=ffmpeg_path,
+            hidden_imports=gui_hidden,
+            excludes=_common_excludes(gui=True),
+            extra_args=windowed,
+        )
+    else:
+        print("\n===== 构建 CLI 版本 =====")
+        _run_pyinstaller(
+            entry=ROOT / "video_scraper.py",
+            name="video_scraper",
+            onedir=onedir,
+            ffmpeg_path=ffmpeg_path,
+            hidden_imports=cli_hidden,
+            excludes=_common_excludes(gui=False),
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Video Scraper 构建脚本")
     parser.add_argument("--onedir", action="store_true", help="onedir 模式（多文件，启动更快）")
     parser.add_argument("--use-system-ffmpeg", action="store_true", help="使用系统已安装的 ffmpeg")
     parser.add_argument("--no-ffmpeg", action="store_true", help="不捆绑 ffmpeg")
+    parser.add_argument("--gui", action="store_true", help="构建 GUI 版本（默认构建 CLI 版本）")
     args = parser.parse_args()
-    build(onedir=args.onedir, use_system_ffmpeg=args.use_system_ffmpeg, no_ffmpeg=args.no_ffmpeg)
+    build(onedir=args.onedir, use_system_ffmpeg=args.use_system_ffmpeg, no_ffmpeg=args.no_ffmpeg, gui=args.gui)
 
 
 if __name__ == "__main__":
