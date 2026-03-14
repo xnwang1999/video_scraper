@@ -1,0 +1,7 @@
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+lxml>=4.6.0
+yt-dlp>=2023.1.6
+pycryptodome>=3.15.0
+tqdm>=4.60.0
+pyinstaller>=6.0.0
