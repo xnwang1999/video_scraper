@@ -207,7 +207,7 @@ python build.py --onedir
 | 浏览器 | 扩展名称 | 安装链接 |
 |--------|---------|---------|
 | Chrome | Get cookies.txt LOCALLY | [Chrome Web Store](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) |
-| Edge | Get cookies.txt LOCALLY | [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/get-cookiestxt-locally/jajhpmkncogjbjibbbpdofodndhmchgh) |
+| Edge | Cookies txt | [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/cookies-txt/dilbcaaegopfblcjdjikanigjbcbngbk) |
 | Firefox | cookies.txt | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/) |
 
 > **注意**：请确保导出的是 **Netscape 格式**（文件开头应有 `# Netscape HTTP Cookie File`），而非 JSON 格式。
