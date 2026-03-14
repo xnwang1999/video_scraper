@@ -15,12 +15,14 @@
 
 ## 预编译可执行文件
 
-`dist/` 目录提供预编译的可执行文件，无需安装 Python 环境即可使用：
+从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载对应平台的可执行文件，无需安装 Python 环境即可使用：
 
-| 平台 | 文件 |
-|------|------|
-| Linux (x86_64) | `dist/video_scraper` |
-| Windows (x64) | `dist/video_scraper.exe` |
+| 文件 | 平台 | 说明 |
+|------|------|------|
+| `video_scraper` | Linux (x86_64) | 命令行版本 |
+| `video_scraper.exe` | Windows (x64) | 命令行版本 |
+| `video_scraper_gui` | Linux (x86_64) | 图形界面版本 |
+| `video_scraper_gui.exe` | Windows (x64) | 图形界面版本 |
 
 ## 项目结构
 
@@ -29,8 +31,8 @@ video_scraper/
 ├── README.md              # 项目说明文档
 ├── requirements.txt       # Python 依赖包列表
 ├── config.json            # 配置文件
-├── video_scraper.py       # 视频下载工具主程序
-├── video_scraper.spec     # PyInstaller 打包配置
+├── video_scraper.py       # 视频下载工具主程序（CLI）
+├── video_scraper_gui.py   # 图形界面主程序（GUI）
 ├── build.py               # 跨平台构建脚本
 └── downloads/             # 默认下载目录
 ```
