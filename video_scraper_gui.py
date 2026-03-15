@@ -15,7 +15,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from video_scraper import VideoScraper, _read_urls_from_file
+from video_scraper import VideoScraper, StopRequested, _read_urls_from_file
 
 # ── 色彩系统（light, dark）─────────────────────────────────────
 # customtkinter 接受 (light_value, dark_value) 元组，自动跟随主题切换
@@ -538,6 +538,7 @@ class VideoScraperGUI(ctk.CTk):
             referer=referer,
             audio_only=self.audio_only_var.get(),
             concurrent_fragments=int(self.fragments_var.get() or 4),
+            stop_event=self._stop_event,
         )
 
     def _set_busy(self, status: str):
@@ -721,6 +722,8 @@ class VideoScraperGUI(ctk.CTk):
                 else:
                     self._log(f"  未能提取到视频信息。")
             self._log("提取完成。")
+        except StopRequested:
+            self._log("任务已停止。")
         except Exception as exc:
             self._log(f"提取出错: {exc}")
         finally:
@@ -756,8 +759,11 @@ class VideoScraperGUI(ctk.CTk):
                 else:
                     self._log(f"  下载失败。")
                 if i < len(urls) and not self._stop_event.is_set():
-                    time.sleep(delay)
+                    if self._stop_event.wait(delay):
+                        break
             self._log(f"下载完成: {ok}/{len(urls)} 成功")
+        except StopRequested:
+            self._log("任务已停止。")
         except Exception as exc:
             self._log(f"下载出错: {exc}")
         finally:
@@ -784,6 +790,8 @@ class VideoScraperGUI(ctk.CTk):
                     break
                 self._log(f"[{i}/{len(urls)}] 查询格式: {url}")
                 scraper.list_formats(url)
+        except StopRequested:
+            self._log("任务已停止。")
         except Exception as exc:
             self._log(f"查询出错: {exc}")
         finally:

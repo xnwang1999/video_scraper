@@ -18,6 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import threading
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urljoin, urlparse
@@ -59,6 +60,10 @@ VIDEO_URL_PATTERNS = [
     r'file["\']?\s*:\s*["\']([^"\']*\.(?:mp4|m3u8|webm|avi|mkv|flv|mov|m4v)[^"\']*)',
     r'url["\']?\s*:\s*["\']([^"\']*\.(?:mp4|m3u8|webm|avi|mkv|flv|mov|m4v)[^"\']*)',
 ]
+
+
+class StopRequested(Exception):
+    """GUI 用户请求停止任务"""
 
 
 @dataclass
@@ -138,6 +143,7 @@ class VideoScraper:
         referer: Optional[str] = None,
         audio_only: bool = False,
         concurrent_fragments: int = 4,
+        stop_event: Optional["threading.Event"] = None,
     ):
         self.quality = quality
         self.browser = browser
@@ -148,6 +154,7 @@ class VideoScraper:
         self.referer = referer
         self.audio_only = audio_only
         self.concurrent_fragments = concurrent_fragments
+        self._stop_event = stop_event
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -187,6 +194,13 @@ class VideoScraper:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
         self.logger = logging.getLogger(__name__)
         self.scraped_videos: List[VideoInfo] = []
+
+    def _check_stop(self):
+        if self._stop_event and self._stop_event.is_set():
+            raise StopRequested("用户取消操作")
+
+    def _ydl_progress_hook(self, d: dict):
+        self._check_stop()
 
     def detect_platform(self, url: str) -> str:
         """检测视频平台类型"""
@@ -251,6 +265,9 @@ class VideoScraper:
             opts["cookiefile"] = self.cookies_file
         if self.browser:
             opts["cookiesfrombrowser"] = (self.browser,)
+
+        if self._stop_event:
+            opts["progress_hooks"] = [self._ydl_progress_hook]
 
         if download:
             Path(output_path).mkdir(parents=True, exist_ok=True)
@@ -317,6 +334,7 @@ class VideoScraper:
 
     def extract_with_ytdlp(self, url: str) -> Optional[VideoInfo]:
         """使用 yt-dlp 提取视频信息"""
+        self._check_stop()
         if not HAS_YTDLP:
             self.logger.warning("yt-dlp 不可用，尝试使用通用直链提取。")
             return None
@@ -324,6 +342,8 @@ class VideoScraper:
             with yt_dlp.YoutubeDL(self._build_ydl_opts(download=False)) as ydl:
                 info = ydl.extract_info(url, download=False)
             return self._build_video_info_from_ytdlp(url, info)
+        except StopRequested:
+            raise
         except Exception as exc:
             self.logger.warning(f"yt-dlp 提取失败: {exc}")
             return None
@@ -331,6 +351,7 @@ class VideoScraper:
     def _extract_with_requests(self, url: str) -> requests.Response:
         last_error = None
         for attempt in range(1, self.retries + 1):
+            self._check_stop()
             try:
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
@@ -339,7 +360,11 @@ class VideoScraper:
                 last_error = exc
                 self.logger.warning(f"请求失败（{attempt}/{self.retries}）: {exc}")
                 if attempt < self.retries:
-                    time.sleep(min(2**attempt, 5))
+                    wait = min(2**attempt, 5)
+                    if self._stop_event and self._stop_event.wait(wait):
+                        raise StopRequested("用户取消操作")
+                    elif not self._stop_event:
+                        time.sleep(wait)
         raise RuntimeError(f"请求失败: {last_error}")
 
     def extract_generic_video(self, url: str) -> Optional[VideoInfo]:
@@ -647,7 +672,11 @@ class VideoScraper:
                     print(f"{status:<{cols}}", end="", flush=True)
                 if done_count >= len(futures):
                     break
-                time.sleep(0.3)
+                if self._stop_event and self._stop_event.wait(0.3):
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise StopRequested("用户取消操作")
+                elif not self._stop_event:
+                    time.sleep(0.3)
 
         print()
 
@@ -681,7 +710,14 @@ class VideoScraper:
             str(output_file),
         ]
         self.logger.info(f"合并 {len(existing)}/{total} 个分片...")
-        result = subprocess.run(merge_cmd, capture_output=True, text=True, timeout=600)
+        proc = subprocess.Popen(merge_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        while proc.poll() is None:
+            if self._stop_event and self._stop_event.wait(0.5):
+                proc.terminate()
+                proc.wait(timeout=5)
+                raise StopRequested("用户取消操作")
+        stdout, stderr = proc.communicate()
+        result = subprocess.CompletedProcess(merge_cmd, proc.returncode, stdout, stderr)
         if result.returncode == 0 and output_file.exists() and output_file.stat().st_size > 0:
             size_mb = output_file.stat().st_size / (1024 * 1024)
             elapsed = int(time.monotonic() - start_ts)
@@ -718,6 +754,10 @@ class VideoScraper:
             start_ts = time.monotonic()
             speed_str = ""
             for line in proc.stdout:
+                if self._stop_event and self._stop_event.is_set():
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    raise StopRequested("用户取消操作")
                 line = line.strip()
                 if line.startswith("out_time="):
                     raw = line.split("=", 1)[1]
@@ -809,6 +849,7 @@ class VideoScraper:
                         desc=file_path.name[:40], ncols=shutil.get_terminal_size().columns,
                     ) as bar:
                         for chunk in response.iter_content(chunk_size=chunk_size):
+                            self._check_stop()
                             if chunk:
                                 fp.write(chunk)
                                 bar.update(len(chunk))
@@ -816,6 +857,7 @@ class VideoScraper:
                     downloaded = 0
                     with open(file_path, "wb") as fp:
                         for chunk in response.iter_content(chunk_size=chunk_size):
+                            self._check_stop()
                             if chunk:
                                 fp.write(chunk)
                                 downloaded += len(chunk)
@@ -842,15 +884,25 @@ class VideoScraper:
                 "-o", str(output_path),
                 video_url,
             ]
-            subprocess.run(cmd, check=True)
+            proc = subprocess.Popen(cmd)
+            while proc.poll() is None:
+                if self._stop_event and self._stop_event.wait(0.5):
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    raise StopRequested("用户取消操作")
+            if proc.returncode != 0:
+                raise subprocess.CalledProcessError(proc.returncode, cmd)
             self.logger.info(f"curl 下载完成: {output_path}")
             return True
+        except StopRequested:
+            raise
         except Exception as exc:
             self.logger.error(f"curl 下载失败: {exc}")
             return False
 
     def download_video(self, url: str, output_path: str = "./downloads/") -> bool:
         """下载视频文件。yt-dlp 失败时自动回退到通用直链下载。"""
+        self._check_stop()
         if not HAS_YTDLP:
             self.logger.info("yt-dlp 不可用，直接使用通用直链下载。")
             return self._manual_download(url, output_path)
@@ -863,6 +915,8 @@ class VideoScraper:
                 self.logger.info(f"yt-dlp 下载成功: {url}")
                 return True
             self.logger.warning(f"yt-dlp 返回非零状态，回退通用直链下载: {url}")
+        except StopRequested:
+            raise
         except Exception as exc:
             self.logger.warning(f"yt-dlp 下载失败({exc})，回退通用直链下载。")
 
@@ -882,6 +936,7 @@ class VideoScraper:
 
     def list_formats(self, url: str) -> bool:
         """列出视频可用格式"""
+        self._check_stop()
         if not HAS_YTDLP:
             self.logger.warning("yt-dlp 不可用，回退通用提取。")
             return self._list_formats_fallback(url)
