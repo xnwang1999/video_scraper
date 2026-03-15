@@ -183,7 +183,9 @@ class VideoScraperGUI(ctk.CTk):
         r = 1
         self._label(card, "画质", r, 0)
         self.quality_var = ctk.StringVar(value="best")
-        self._combo(card, self.QUALITIES, self.quality_var).grid(row=r, column=1, sticky="w", padx=6, pady=4)
+        self.quality_combo = self._combo(card, self.QUALITIES, self.quality_var)
+        self.quality_combo.grid(row=r, column=1, sticky="w", padx=6, pady=4)
+        self._small_btn(card, "获取", self._on_fetch_qualities).grid(row=r, column=2, padx=(0, 14), pady=4)
 
         r += 1
         self._label(card, "下载路径", r, 0)
@@ -500,6 +502,78 @@ class VideoScraperGUI(ctk.CTk):
         self._worker_thread.start()
 
     # ── 按钮回调 ──────────────────────────────────────────────
+
+    def _on_fetch_qualities(self):
+        urls = self._get_urls()
+        if not urls:
+            self._log("请先输入 URL 再获取可用画质。")
+            return
+        self._run_in_thread(lambda: self._do_fetch_qualities(urls[0]), "获取画质中...")
+
+    def _do_fetch_qualities(self, url: str):
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        redirector = StdoutRedirector(self._log_queue)
+        sys.stdout = redirector
+        sys.stderr = redirector
+        try:
+            scraper = self._build_scraper()
+            self._log(f"正在获取可用画质: {url}")
+
+            info = scraper.extract_with_ytdlp(url)
+            if info and info.formats:
+                resolutions = set()
+                for fmt in info.formats:
+                    res = fmt.get("resolution", "")
+                    if "x" in res:
+                        try:
+                            h = int(res.split("x")[-1])
+                            if h > 0:
+                                resolutions.add(h)
+                        except ValueError:
+                            pass
+                if resolutions:
+                    sorted_res = sorted(resolutions, reverse=True)
+                    values = ["best"] + [f"{h}p" for h in sorted_res] + ["worst"]
+                    self._log(f"可用画质: {', '.join(values)}")
+                    self.after(0, lambda: self._update_quality_options(values))
+                    return
+                    
+            import yt_dlp
+            opts = scraper._build_ydl_opts(download=False)
+            opts["quiet"] = True
+            opts["no_warnings"] = True
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                raw_info = ydl.extract_info(url, download=False)
+
+            if not raw_info or not raw_info.get("formats"):
+                self._log("未获取到格式信息，保持默认选项。")
+                return
+
+            resolutions = set()
+            for fmt in raw_info["formats"]:
+                h = fmt.get("height")
+                if h and isinstance(h, int) and h > 0:
+                    resolutions.add(h)
+
+            if not resolutions:
+                self._log("未发现有效分辨率，保持默认选项。")
+                return
+
+            sorted_res = sorted(resolutions, reverse=True)
+            values = ["best"] + [f"{h}p" for h in sorted_res] + ["worst"]
+            self._log(f"可用画质: {', '.join(values)}")
+
+            self.after(0, lambda: self._update_quality_options(values))
+        except Exception as exc:
+            self._log(f"获取画质失败: {exc}")
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+            self.after(0, lambda: self._set_idle("获取完成"))
+
+    def _update_quality_options(self, values: list[str]):
+        self.quality_combo.configure(values=values)
+        if self.quality_var.get() not in values:
+            self.quality_var.set(values[0])
 
     def _import_urls(self):
         filepath = filedialog.askopenfilename(
