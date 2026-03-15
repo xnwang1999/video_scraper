@@ -11,18 +11,22 @@
 - **列表页批量发现**: 从列表页/首页自动提取资源链接，支持自定义正则和 CSS 选择器
 - **实时进度显示**: 下载速度、已下载大小、耗时、分片进度
 - **登录态支持**: 支持 `cookies.txt` 或从浏览器读取 cookies
-- **跨平台打包**: 支持打包为 Windows/Linux/macOS 可执行文件（内嵌 ffmpeg）
+- **浏览器扩展**: Chrome/Edge 扩展一键发送 URL + Cookies 到 GUI，无需手动导出
+- **跨平台打包**: 支持打包为 Windows/Linux/macOS 可执行文件（内嵌 ffmpeg + Node.js）
 
 ## 预编译可执行文件
 
-从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载对应平台的可执行文件，无需安装 Python 环境即可使用：
+从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载，提供三个版本：
 
-| 文件 | 平台 | 说明 |
-|------|------|------|
-| `video_scraper` | Linux (x86_64) | 命令行版本 |
-| `video_scraper.exe` | Windows (x64) | 命令行版本 |
-| `video_scraper_gui` | Linux (x86_64) | 图形界面版本 |
-| `video_scraper_gui.exe` | Windows (x64) | 图形界面版本 |
+| 版本 | 内容 | 体积 | 适合 |
+|------|------|------|------|
+| **full** | Node.js + ffmpeg | 94-182 MB | 一般用户，开箱即用 |
+| **standard** | 仅 ffmpeg | 61-141 MB | 不下载 YouTube 或已有 Node.js |
+| **lite** | 纯净版 | 27-49 MB | 系统已有全部依赖 |
+
+每个版本包含 4 个文件（Linux/Windows × CLI/GUI），文件名格式：`video_scraper[_gui]_{full|std|lite}_{linux|win}[.exe]`
+
+所有版本均**自动检测系统已安装的依赖**，优先使用系统版本，内嵌的仅作兜底。
 
 ## 项目结构
 
@@ -34,6 +38,12 @@ video_scraper/
 ├── video_scraper.py       # 视频下载工具主程序（CLI）
 ├── video_scraper_gui.py   # 图形界面主程序（GUI）
 ├── build.py               # 跨平台构建脚本
+├── extension/             # 浏览器扩展（Chrome/Edge）
+│   ├── manifest.json      # 扩展清单
+│   ├── popup.html         # 弹窗界面
+│   ├── popup.js           # 弹窗逻辑
+│   ├── background.js      # 后台脚本
+│   └── icons/             # 扩展图标
 └── downloads/             # 默认下载目录
 ```
 
@@ -199,11 +209,55 @@ python build.py --gui --bundle-node
 - **ffmpeg**: 视频格式转换与 m3u8 处理
 - **Node.js**（可选）: YouTube 视频提取所需的 JavaScript 运行时，详见下方说明
 
+## 浏览器扩展（推荐）
+
+项目附带 Chrome/Edge 浏览器扩展，可一键将当前页面的视频 URL 和 Cookies 发送到 GUI 桌面端，**无需手动导出 cookies.txt**。
+
+### 安装扩展
+
+1. 打开浏览器扩展管理页面：
+   - Chrome: 地址栏输入 `chrome://extensions/`
+   - Edge: 地址栏输入 `edge://extensions/`
+2. 开启右上角 **开发者模式**
+3. 点击 **加载已解压的扩展程序**
+4. 选择项目中的 `extension/` 文件夹
+5. 扩展安装成功后，工具栏会出现 Video Scraper 图标
+
+### 使用方法
+
+1. **先启动 GUI 桌面端**（`video_scraper_gui` 或 `video_scraper_gui.exe`），GUI 会自动在 `127.0.0.1:9527` 启动本地 API 服务
+2. 在浏览器中打开要下载的视频页面（如 B站、YouTube）
+3. 点击工具栏的 Video Scraper 扩展图标
+4. 扩展弹窗显示当前 URL，状态指示灯为绿色表示已连接桌面端
+5. 选择画质后，点击 **提取信息** 或 **下载视频**
+6. GUI 桌面端会自动接收 URL 和 Cookies 并开始处理
+
+### 功能说明
+
+| 功能 | 说明 |
+|------|------|
+| **自动获取 Cookies** | 扩展自动读取当前站点的 Cookies 并以 Netscape 格式发送给 GUI |
+| **YouTube 增强** | 访问 YouTube 时，扩展会额外获取 Google 域名下的认证 Cookies |
+| **画质选择** | 支持 best / 1080p / 720p / 480p / worst |
+| **端口配置** | 默认端口 9527，可在扩展弹窗中修改（需与 GUI 一致） |
+| **连接状态** | 绿色 = 已连接桌面端，红色 = 桌面端未启动 |
+
+### 注意事项
+
+- 扩展仅在**本机**与 GUI 通信（`127.0.0.1`），不会将数据发送到外部
+- 每次使用前请确保 GUI 桌面端已启动
+- 如果更换了 GUI 的 API 端口，需在扩展弹窗中同步修改
+- YouTube 需要系统安装 Node.js（或使用 full 版本）才能正常提取视频格式
+
 ## Cookies 配置（重要）
 
-部分视频网站（如 **B站 bilibili**）启用了反爬机制，未携带有效 Cookie 会返回 `HTTP 412` 错误，导致提取和下载失败。以下是配置 Cookies 的详细步骤。
+部分视频网站（如 **B站 bilibili**）启用了反爬机制，未携带有效 Cookie 会返回 `HTTP 412` 错误，导致提取和下载失败。以下是配置 Cookies 的三种方法。
 
-### 方法一：导出 cookies.txt 文件（推荐）
+### 方法一：使用浏览器扩展（推荐，仅 GUI）
+
+如果使用 GUI 版本，推荐安装项目附带的浏览器扩展（见上方"浏览器扩展"章节），一键发送 URL + Cookies，无需手动导出文件。
+
+### 方法二：导出 cookies.txt 文件
 
 适用于所有平台（Windows / Linux / macOS），尤其是 **WSL 用户**（WSL 无法直接读取 Windows 浏览器的 Cookie 数据库）。
 
@@ -247,7 +301,7 @@ python build.py --gui --bundle-node
 .bilibili.com	TRUE	/	FALSE	1735689600	bili_jct	xxxxxxxxxxxxxx
 ```
 
-### 方法二：从浏览器自动读取（非 WSL 环境）
+### 方法三：从浏览器自动读取（非 WSL 环境）
 
 如果你在本机（非 WSL）运行，可以直接从浏览器读取 Cookie：
 
