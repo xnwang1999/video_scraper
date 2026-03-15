@@ -171,6 +171,10 @@ python build.py --no-ffmpeg
 
 # onedir 模式（启动更快）
 python build.py --onedir
+
+# 捆绑 Node.js（支持 YouTube 视频下载）
+python build.py --bundle-node
+python build.py --gui --bundle-node
 ```
 
 构建产物在 `dist/` 目录。
@@ -193,6 +197,7 @@ python build.py --onedir
 - **tqdm**: 进度条显示
 - **lxml**: XML/HTML 解析器
 - **ffmpeg**: 视频格式转换与 m3u8 处理
+- **Node.js**（可选）: YouTube 视频提取所需的 JavaScript 运行时，详见下方说明
 
 ## Cookies 配置（重要）
 
@@ -259,9 +264,61 @@ python build.py --onedir
 | 站点 | 是否必须 | 说明 |
 |------|---------|------|
 | B站 (bilibili) | ✅ 必须 | 未携带 Cookie 会返回 HTTP 412，无法访问 |
-| YouTube | ⚠️ 部分需要 | 年龄限制 / 会员视频需要登录态 |
+| YouTube | ⚠️ 部分需要 | 年龄限制/会员视频需要登录态；另需安装 Node.js 等 JS 运行时 |
 | Instagram / X(Twitter) | ⚠️ 部分需要 | 私密内容需要登录态 |
 | 其他公开站点 | ❌ 不需要 | 公开内容通常无需 Cookie |
+
+## YouTube 视频下载说明
+
+YouTube 的反机器人机制（PO Token / n 参数挑战）要求 yt-dlp 具备以下两个条件才能正常提取视频格式：
+
+1. **JavaScript 运行时**（Node.js / deno / bun）
+2. **EJS 挑战求解器脚本**（程序已自动配置从 GitHub 下载）
+
+如果系统未安装 JS 运行时，YouTube 视频**只能获取到缩略图（storyboard），无法提取实际视频格式**。
+
+### 解决方案
+
+**方案一：安装 Node.js（推荐）**
+
+在系统上安装 Node.js，程序会自动检测并使用：
+
+```bash
+# Windows（推荐使用 winget）
+winget install OpenJS.NodeJS
+
+# Ubuntu/Debian
+sudo apt install nodejs
+
+# macOS
+brew install node
+```
+
+安装后重启终端，运行 `node --version` 确认安装成功。
+
+**方案二：构建时内嵌 Node.js**
+
+使用 `--bundle-node` 选项打包可执行文件时将 Node.js 一同捆绑，用户无需单独安装：
+
+```bash
+# 构建 GUI 版本并捆绑 Node.js
+python build.py --gui --bundle-node
+
+# 构建 CLI 版本并捆绑 Node.js
+python build.py --bundle-node
+```
+
+> **注意**：捆绑 Node.js 会使可执行文件体积增大约 70-90 MB。如果只下载 B站等国内站点视频，无需捆绑 Node.js。
+
+### 支持的 JS 运行时
+
+| 运行时 | 优先级 | 说明 |
+|--------|--------|------|
+| deno | 默认 | yt-dlp 默认启用，需单独安装 |
+| Node.js | 推荐 | 最常见的 JS 运行时，易于安装 |
+| bun | 可选 | 性能较好，但普及度较低 |
+
+只需安装**其中任意一个**即可。
 
 ## 注意事项
 

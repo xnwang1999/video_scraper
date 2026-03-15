@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Video Scraper Helper",
+  "version": "1.0",
+  "description": "一键发送视频 URL 和 Cookies 到 Video Scraper 桌面端下载",
+  "permissions": ["activeTab", "cookies"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

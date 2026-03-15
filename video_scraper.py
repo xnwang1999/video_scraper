@@ -92,6 +92,28 @@ class VideoInfo:
             self.timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _detect_js_runtimes() -> Dict:
+    """检测可用的 JS 运行时（deno/node/bun），供 yt-dlp 使用"""
+    runtimes: Dict = {}
+    for name in ("deno", "node", "bun"):
+        path = shutil.which(name)
+        if path:
+            runtimes[name] = {}
+            continue
+        candidates: list[Path] = []
+        if getattr(sys, "frozen", False):
+            exe = f"{name}.exe" if sys.platform == "win32" else name
+            candidates.append(Path(sys._MEIPASS) / "node" / exe)
+        if sys.platform == "win32" and name == "node":
+            candidates.append(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs" / "node.exe")
+            candidates.append(Path(os.environ.get("LOCALAPPDATA", "")) / "fnm_multishells" / "node.exe")
+        for candidate in candidates:
+            if candidate.exists():
+                runtimes[name] = {"path": str(candidate)}
+                break
+    return runtimes
+
+
 def _get_ffmpeg_path() -> str:
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)
@@ -143,6 +165,15 @@ class VideoScraper:
             self.session.headers["Referer"] = self.referer
         if self.proxy:
             self.session.proxies.update({"http": self.proxy, "https": self.proxy})
+
+        if self.cookies_file and Path(self.cookies_file).exists():
+            try:
+                import http.cookiejar
+                cj = http.cookiejar.MozillaCookieJar(self.cookies_file)
+                cj.load(ignore_discard=True, ignore_expires=True)
+                self.session.cookies.update(cj)
+            except Exception:
+                pass
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
         self.logger = logging.getLogger(__name__)
@@ -199,9 +230,12 @@ class VideoScraper:
             "format": self._quality_to_format(),
             "ffmpeg_location": str(Path(_get_ffmpeg_path()).parent),
         }
+        opts["extractor_args"] = {"youtube": {"player_client": ["default"]}}
+        opts["js_runtimes"] = _detect_js_runtimes()
+        opts["remote_components"] = {"ejs:github"}
         if self.referer:
             opts["referer"] = self.referer
-        if Path(self.cookies_file).exists():
+        if self.cookies_file and Path(self.cookies_file).exists():
             opts["cookiefile"] = self.cookies_file
         if self.browser:
             opts["cookiesfrombrowser"] = (self.browser,)

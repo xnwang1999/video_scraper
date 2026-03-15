@@ -2,11 +2,14 @@
 """Video Scraper GUI - 基于 customtkinter 的图形界面"""
 
 import io
+import json
 import logging
 import queue
 import sys
+import tempfile
 import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from tkinter import filedialog
 
@@ -70,9 +73,70 @@ class StdoutRedirector(io.TextIOBase):
         pass
 
 
+class APIHandler(BaseHTTPRequestHandler):
+    """处理来自浏览器扩展的 HTTP 请求。"""
+    gui: "VideoScraperGUI" = None
+
+    def log_message(self, format, *args):
+        pass
+
+    def _cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def _json_response(self, code: int, data: dict):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors_headers()
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path == "/api/health":
+            self._json_response(200, {"status": "ok"})
+        else:
+            self._json_response(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path != "/api/task":
+            self._json_response(404, {"error": "not found"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+        except Exception:
+            self._json_response(400, {"error": "invalid JSON"})
+            return
+
+        url = body.get("url", "").strip()
+        action = body.get("action", "download")
+        quality = body.get("quality", "best")
+        cookies_text = body.get("cookies", "")
+
+        if not url:
+            self._json_response(400, {"error": "url is required"})
+            return
+
+        gui = APIHandler.gui
+        if gui is None:
+            self._json_response(500, {"error": "GUI not ready"})
+            return
+
+        gui.after(0, lambda: gui._handle_extension_task(url, action, quality, cookies_text))
+        self._json_response(200, {"message": f"已接收，正在{('下载' if action == 'download' else '提取')}: {url}"})
+
+
 class VideoScraperGUI(ctk.CTk):
     QUALITIES = ["best", "1080p", "720p", "480p", "360p", "worst"]
     BROWSERS = ["无", "chrome", "firefox", "edge", "chromium"]
+    API_PORT = 9527
 
     def __init__(self):
         super().__init__()
@@ -97,6 +161,7 @@ class VideoScraperGUI(ctk.CTk):
         self._build_ui()
         self._setup_logging()
         self._poll_log_queue()
+        self._start_api_server()
 
     # ── UI 构建 ──────────────────────────────────────────────
 
@@ -724,6 +789,49 @@ class VideoScraperGUI(ctk.CTk):
         finally:
             sys.stdout, sys.stderr = old_stdout, old_stderr
             self.after(0, lambda: self._set_idle("查询完成"))
+
+
+    # ── 本地 API 服务 ──────────────────────────────────────────
+
+    def _start_api_server(self):
+        APIHandler.gui = self
+        try:
+            self._http_server = HTTPServer(("127.0.0.1", self.API_PORT), APIHandler)
+            t = threading.Thread(target=self._http_server.serve_forever, daemon=True)
+            t.start()
+            self._log(f"浏览器扩展 API 已启动: http://127.0.0.1:{self.API_PORT}")
+        except OSError as exc:
+            self._log(f"API 服务启动失败（端口 {self.API_PORT} 可能被占用）: {exc}")
+
+    def _handle_extension_task(self, url: str, action: str, quality: str, cookies_text: str):
+        self.url_textbox.delete("1.0", "end")
+        self.url_textbox.insert("1.0", url)
+        self.quality_var.set(quality)
+
+        if cookies_text.strip():
+            try:
+                lines = [l for l in cookies_text.splitlines() if l.strip()]
+                if lines:
+                    f = tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".txt", prefix="vs_cookies_", delete=False
+                    )
+                    f.write("# Netscape HTTP Cookie File\n")
+                    f.write("\n".join(lines) + "\n")
+                    f.close()
+                    self.cookies_var.set(f.name)
+                    domains = {l.split("\t")[0].lstrip(".") for l in lines if "\t" in l}
+                    self._log(f"已接收浏览器 Cookies（{len(lines)} 条，域名: {', '.join(sorted(domains))}）")
+                else:
+                    self.cookies_var.set("cookies.txt")
+                    self._log("浏览器未提供 Cookies，使用默认设置")
+            except Exception as exc:
+                self._log(f"处理扩展 Cookies 失败: {exc}")
+
+        self._log(f"来自浏览器扩展: {action} - {url}")
+        if action == "download":
+            self._on_download()
+        else:
+            self._on_extract()
 
 
 def main():

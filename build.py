@@ -9,6 +9,7 @@
     python build.py --onedir            # onedir 模式（更快启动）
     python build.py --use-system-ffmpeg # 用系统已安装的 ffmpeg
     python build.py --no-ffmpeg         # 不捆绑 ffmpeg
+    python build.py --bundle-node       # 捆绑 Node.js（YouTube 需要）
 """
 
 import argparse
@@ -29,8 +30,17 @@ FFMPEG_URLS = {
     "windows_amd64": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
 }
 
+NODE_URLS = {
+    "windows_amd64": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip",
+    "linux_x86_64": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-x64.tar.xz",
+    "linux_aarch64": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-arm64.tar.xz",
+    "darwin_x86_64": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-x64.tar.gz",
+    "darwin_arm64": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.gz",
+}
+
 ROOT = Path(__file__).resolve().parent
 FFMPEG_DIR = ROOT / "ffmpeg_bin"
+NODE_DIR = ROOT / "node_bin"
 
 
 def detect_platform() -> str:
@@ -125,6 +135,81 @@ def download_ffmpeg(plat: str) -> Path:
     return target
 
 
+def prepare_node(plat: str) -> Path | None:
+    """准备 Node.js 二进制：优先复制系统已安装的，否则从网络下载。"""
+    import requests as _requests
+
+    NODE_DIR.mkdir(parents=True, exist_ok=True)
+    exe_name = "node.exe" if plat.startswith("windows") else "node"
+    target = NODE_DIR / exe_name
+
+    if target.exists():
+        print(f"node 已存在: {target}")
+        return target
+
+    system_node = shutil.which("node")
+    if not system_node and sys.platform == "win32":
+        candidate = Path(r"C:\Program Files\nodejs\node.exe")
+        if candidate.exists():
+            system_node = str(candidate)
+
+    if system_node:
+        print(f"复制系统 node: {system_node} -> {target}")
+        shutil.copy2(system_node, target)
+        if not plat.startswith("windows"):
+            target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        return target
+
+    url = NODE_URLS.get(plat)
+    if not url:
+        print(f"警告: 没有对应平台的 Node.js 下载地址: {plat}，跳过")
+        return None
+
+    archive_name = url.rsplit("/", 1)[-1]
+    archive_path = NODE_DIR / archive_name
+    print(f"下载 Node.js: {url}")
+    resp = _requests.get(url, stream=True, timeout=300)
+    resp.raise_for_status()
+    total = int(resp.headers.get("content-length", 0))
+    downloaded = 0
+    with open(archive_path, "wb") as fp:
+        for chunk in resp.iter_content(chunk_size=1024 * 256):
+            fp.write(chunk)
+            downloaded += len(chunk)
+            if total:
+                pct = downloaded * 100 // total
+                print(f"\r  下载进度: {pct}% ({downloaded // (1024*1024)} MB)", end="", flush=True)
+    print()
+
+    print("解压 Node.js...")
+    if archive_name.endswith((".tar.xz", ".tar.gz")):
+        mode = "r:xz" if archive_name.endswith(".tar.xz") else "r:gz"
+        with tarfile.open(archive_path, mode) as tf:
+            for member in tf.getmembers():
+                if member.name.endswith("/bin/node") and member.isfile():
+                    member.name = exe_name
+                    tf.extract(member, NODE_DIR)
+                    break
+    elif archive_name.endswith(".zip"):
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            for name in zf.namelist():
+                if name.endswith("/node.exe"):
+                    data = zf.read(name)
+                    target.write_bytes(data)
+                    break
+
+    archive_path.unlink(missing_ok=True)
+
+    if target.exists():
+        if not plat.startswith("windows"):
+            target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        print(f"Node.js 就绪: {target}")
+        return target
+
+    print("警告: Node.js 解压失败，跳过")
+    return None
+
+
 def _common_excludes(gui: bool = False) -> list:
     excludes = [
         "torch", "torchvision", "torchaudio",
@@ -150,12 +235,15 @@ def _run_pyinstaller(
     excludes: list,
     collect_all: list | None = None,
     extra_args: list | None = None,
+    node_path: Path | None = None,
 ):
     cmd = [sys.executable, "-m", "PyInstaller", "--name", name]
 
+    sep = ";" if sys.platform == "win32" else ":"
     if ffmpeg_path:
-        sep = ";" if sys.platform == "win32" else ":"
         cmd.extend(["--add-binary", f"{ffmpeg_path}{sep}ffmpeg"])
+    if node_path:
+        cmd.extend(["--add-binary", f"{node_path}{sep}node"])
 
     for mod in (collect_all or []):
         cmd.extend(["--collect-all", mod])
@@ -194,7 +282,7 @@ def _run_pyinstaller(
         print(f"\n警告: 未找到输出文件 {output}")
 
 
-def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool = False, gui: bool = False):
+def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool = False, gui: bool = False, bundle_node: bool = False):
     plat = detect_platform()
     print(f"平台: {plat}")
 
@@ -205,6 +293,10 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
         ffmpeg_path = copy_system_ffmpeg()
     else:
         ffmpeg_path = download_ffmpeg(plat)
+
+    node_path = None
+    if bundle_node:
+        node_path = prepare_node(plat)
 
     cli_hidden = [
         "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
@@ -225,6 +317,7 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             excludes=_common_excludes(gui=True),
             collect_all=cli_collect_all,
             extra_args=windowed,
+            node_path=node_path,
         )
     else:
         print("\n===== 构建 CLI 版本 =====")
@@ -236,6 +329,7 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             hidden_imports=cli_hidden,
             excludes=_common_excludes(gui=False),
             collect_all=cli_collect_all,
+            node_path=node_path,
         )
 
 
@@ -245,8 +339,9 @@ def main():
     parser.add_argument("--use-system-ffmpeg", action="store_true", help="使用系统已安装的 ffmpeg")
     parser.add_argument("--no-ffmpeg", action="store_true", help="不捆绑 ffmpeg")
     parser.add_argument("--gui", action="store_true", help="构建 GUI 版本（默认构建 CLI 版本）")
+    parser.add_argument("--bundle-node", action="store_true", help="捆绑 Node.js（YouTube 需要）")
     args = parser.parse_args()
-    build(onedir=args.onedir, use_system_ffmpeg=args.use_system_ffmpeg, no_ffmpeg=args.no_ffmpeg, gui=args.gui)
+    build(onedir=args.onedir, use_system_ffmpeg=args.use_system_ffmpeg, no_ffmpeg=args.no_ffmpeg, gui=args.gui, bundle_node=args.bundle_node)
 
 
 if __name__ == "__main__":
