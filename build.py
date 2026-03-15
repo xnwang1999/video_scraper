@@ -148,6 +148,7 @@ def _run_pyinstaller(
     ffmpeg_path: Path | None,
     hidden_imports: list,
     excludes: list,
+    collect_all: list | None = None,
     extra_args: list | None = None,
 ):
     cmd = [sys.executable, "-m", "PyInstaller", "--name", name]
@@ -155,6 +156,9 @@ def _run_pyinstaller(
     if ffmpeg_path:
         sep = ";" if sys.platform == "win32" else ":"
         cmd.extend(["--add-binary", f"{ffmpeg_path}{sep}ffmpeg"])
+
+    for mod in (collect_all or []):
+        cmd.extend(["--collect-all", mod])
 
     for mod in hidden_imports:
         cmd.extend(["--hidden-import", mod])
@@ -203,9 +207,10 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
         ffmpeg_path = download_ffmpeg(plat)
 
     cli_hidden = [
-        "yt_dlp", "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
+        "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
         "bs4", "tqdm", "requests", "lxml",
     ]
+    cli_collect_all = ["yt_dlp"]
 
     if gui:
         print("\n===== 构建 GUI 版本 =====")
@@ -218,6 +223,7 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             ffmpeg_path=ffmpeg_path,
             hidden_imports=gui_hidden,
             excludes=_common_excludes(gui=True),
+            collect_all=cli_collect_all,
             extra_args=windowed,
         )
     else:
@@ -229,6 +235,7 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             ffmpeg_path=ffmpeg_path,
             hidden_imports=cli_hidden,
             excludes=_common_excludes(gui=False),
+            collect_all=cli_collect_all,
         )
 
 

@@ -197,6 +197,7 @@ class VideoScraper:
             "http_headers": {"User-Agent": self.session.headers["User-Agent"]},
             "proxy": self.proxy,
             "format": self._quality_to_format(),
+            "ffmpeg_location": str(Path(_get_ffmpeg_path()).parent),
         }
         if self.referer:
             opts["referer"] = self.referer
