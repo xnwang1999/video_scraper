@@ -300,9 +300,9 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
 
     cli_hidden = [
         "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
-        "bs4", "tqdm", "requests", "lxml",
+        "tqdm", "requests", "lxml",
     ]
-    cli_collect_all = ["yt_dlp"]
+    cli_collect_all = ["yt_dlp", "bs4"]
 
     if gui:
         print("\n===== 构建 GUI 版本 =====")
