@@ -215,13 +215,25 @@ python build.py --gui --bundle-node
 
 ### 安装扩展
 
-1. 打开浏览器扩展管理页面：
+#### 方式一：从 Release 下载安装（推荐）
+
+1. 从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载 `video_scraper_extension_v1.0.zip`
+2. 解压 zip 文件到任意目录
+3. 打开浏览器扩展管理页面：
    - Chrome: 地址栏输入 `chrome://extensions/`
    - Edge: 地址栏输入 `edge://extensions/`
-2. 开启右上角 **开发者模式**
-3. 点击 **加载已解压的扩展程序**
-4. 选择项目中的 `extension/` 文件夹
-5. 扩展安装成功后，工具栏会出现 Video Scraper 图标
+4. 开启右上角 **开发者模式**
+5. 点击 **加载已解压的扩展程序**
+6. 选择解压后的文件夹
+7. 扩展安装成功后，工具栏会出现 Video Scraper 图标
+
+#### 方式二：从源码安装
+
+1. 克隆或下载本仓库
+2. 打开浏览器扩展管理页面（同上）
+3. 开启 **开发者模式**
+4. 点击 **加载已解压的扩展程序**
+5. 选择项目中的 `extension/` 文件夹
 
 ### 使用方法
 
