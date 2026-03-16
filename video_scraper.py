@@ -9,6 +9,7 @@ Video Scraper - 面向公开非加密视频页面的下载与信息提取工具�
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess

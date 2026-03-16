@@ -234,6 +234,8 @@ def _run_pyinstaller(
     hidden_imports: list,
     excludes: list,
     collect_all: list | None = None,
+    collect_data: list | None = None,
+    collect_submodules: list | None = None,
     extra_args: list | None = None,
     node_path: Path | None = None,
 ):
@@ -247,6 +249,10 @@ def _run_pyinstaller(
 
     for mod in (collect_all or []):
         cmd.extend(["--collect-all", mod])
+    for mod in (collect_data or []):
+        cmd.extend(["--collect-data", mod])
+    for mod in (collect_submodules or []):
+        cmd.extend(["--collect-submodules", mod])
 
     for mod in hidden_imports:
         cmd.extend(["--hidden-import", mod])
@@ -298,11 +304,20 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
     if bundle_node:
         node_path = prepare_node(plat)
 
+    # 最小依赖：只打包真正用到的
+    # - yt_dlp: 必须 collect-all（大量动态加载的 extractor）
+    # - bs4: 仅用 html.parser，收子模块但排除 tests/diagnose
+    # - certifi: 只收 cacert.pem（SSL 证书）
+    # - Crypto.Cipher.AES: 仅 m3u8 AES-128 解密用
+    # - lxml 由 yt_dlp/requests 依赖图带入，不单独 hidden-import
     cli_hidden = [
         "Crypto", "Crypto.Cipher", "Crypto.Cipher.AES",
-        "tqdm", "requests", "lxml",
+        "bs4", "bs4.builder", "bs4.builder._htmlparser",
+        "tqdm", "requests",
     ]
-    cli_collect_all = ["yt_dlp", "bs4"]
+    cli_collect_all = ["yt_dlp"]
+    cli_collect_data = ["certifi"]
+    cli_collect_submodules = []  # bs4 用 hidden + 上面子模块，避免收进 bs4.tests
 
     if gui:
         print("\n===== 构建 GUI 版本 =====")
@@ -315,7 +330,9 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             ffmpeg_path=ffmpeg_path,
             hidden_imports=gui_hidden,
             excludes=_common_excludes(gui=True),
-            collect_all=cli_collect_all,
+            collect_all=cli_collect_all + ["customtkinter"],
+            collect_data=cli_collect_data,
+            collect_submodules=cli_collect_submodules,
             extra_args=windowed,
             node_path=node_path,
         )
@@ -329,6 +346,8 @@ def build(onedir: bool = False, use_system_ffmpeg: bool = False, no_ffmpeg: bool
             hidden_imports=cli_hidden,
             excludes=_common_excludes(gui=False),
             collect_all=cli_collect_all,
+            collect_data=cli_collect_data,
+            collect_submodules=cli_collect_submodules,
             node_path=node_path,
         )
 
