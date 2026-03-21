@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Video Scraper Helper",
-  "version": "1.0",
+  "version": "1.1",
   "description": "一键发送视频 URL 和 Cookies 到 Video Scraper 桌面端下载",
   "permissions": ["activeTab", "cookies"],
   "host_permissions": ["<all_urls>"],
