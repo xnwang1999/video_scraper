@@ -215,7 +215,11 @@ python build.py --gui --bundle-node
 
 ### 安装扩展
 
-#### 方式一：从 Release 下载安装（推荐）
+#### 方式一：从 Edge 商店安装（推荐）
+
+直接从 [Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/video-scraper-helper/gkhmioogpdmabomkbklpjocgfkkpmied) 安装，支持自动更新。
+
+#### 方式二：从 Release 下载安装
 
 1. 从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载 `video_scraper_extension_v1.1.zip`
 2. 解压 zip 文件到任意目录
@@ -227,7 +231,7 @@ python build.py --gui --bundle-node
 6. 选择解压后的文件夹
 7. 扩展安装成功后，工具栏会出现 Video Scraper 图标
 
-#### 方式二：从源码安装
+#### 方式三：从源码安装
 
 1. 克隆或下载本仓库
 2. 打开浏览器扩展管理页面（同上）
