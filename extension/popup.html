@@ -22,6 +22,22 @@ body {
   font-size: 15px;
   font-weight: 700;
   color: #0f7dff;
+  flex: 1;
+}
+.btn-open {
+  padding: 4px 10px;
+  border: 1px solid #2a3a5e;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.btn-open:hover {
+  background: #2a3a5e;
+  color: #e8eaed;
 }
 .status-dot {
   width: 8px; height: 8px;
@@ -113,6 +129,7 @@ body {
 <div class="header">
   <div class="status-dot" id="statusDot"></div>
   <h1>Video Scraper</h1>
+  <button class="btn btn-open" id="btnOpen" title="打开/聚焦 GUI 窗口">打开GUI</button>
 </div>
 
 <div class="url-box" id="urlBox">检测中...</div>

@@ -54,6 +54,8 @@ try:
 except ImportError:
     HAS_CRYPTO = False
 
+APP_VERSION = "1.1.0"
+
 VIDEO_URL_PATTERNS = [
     r'"(https?://[^"]*\.(?:mp4|m3u8|webm|avi|mkv|flv|mov|m4v)(?:\?[^"]*)?)"',
     r"'(https?://[^']*\.(?:mp4|m3u8|webm|avi|mkv|flv|mov|m4v)(?:\?[^']*)?)'",

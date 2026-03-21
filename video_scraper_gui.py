@@ -4,7 +4,10 @@
 import io
 import json
 import logging
+import os
 import queue
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,7 +18,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from video_scraper import VideoScraper, StopRequested, _read_urls_from_file
+from video_scraper import VideoScraper, StopRequested, _read_urls_from_file, APP_VERSION
 
 # ── 色彩系统（light, dark）─────────────────────────────────────
 # customtkinter 接受 (light_value, dark_value) 元组，自动跟随主题切换
@@ -100,6 +103,13 @@ class APIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/health":
             self._json_response(200, {"status": "ok"})
+        elif self.path == "/api/show":
+            gui = APIHandler.gui
+            if gui:
+                gui.after(0, lambda: (gui.deiconify(), gui.lift(), gui.focus_force()))
+                self._json_response(200, {"status": "ok"})
+            else:
+                self._json_response(500, {"error": "GUI not ready"})
         else:
             self._json_response(404, {"error": "not found"})
 
@@ -186,6 +196,11 @@ class VideoScraperGUI(ctk.CTk):
             text_color=C["accent"],
         ).grid(row=0, column=0, sticky="w")
 
+        ctk.CTkLabel(
+            frame, text=f"v{APP_VERSION}", font=self._small_font,
+            text_color=C["text2"],
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+
         self.theme_btn = ctk.CTkButton(
             frame, text="Light", width=60, height=28,
             font=self._small_font, corner_radius=14,
@@ -256,7 +271,8 @@ class VideoScraperGUI(ctk.CTk):
         self._label(card, "下载路径", r, 0)
         self.download_path_var = ctk.StringVar(value="./downloads/")
         self._entry(card, self.download_path_var).grid(row=r, column=1, sticky="ew", padx=6, pady=4)
-        self._small_btn(card, "浏览", self._browse_download_path).grid(row=r, column=2, padx=(0, 14), pady=4)
+        self._small_btn(card, "浏览", self._browse_download_path).grid(row=r, column=2, padx=(0, 4), pady=4)
+        self._small_btn(card, "打开", self._open_download_dir).grid(row=r, column=3, padx=(0, 14), pady=4)
 
         r += 1
         self.audio_only_var = ctk.BooleanVar(value=False)
@@ -672,6 +688,18 @@ class VideoScraperGUI(ctk.CTk):
         if path:
             self.download_path_var.set(path)
 
+    def _open_download_dir(self):
+        path = self.download_path_var.get() or "./downloads/"
+        target = Path(path).resolve()
+        if not target.exists():
+            target.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(str(target))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(target)])
+        else:
+            subprocess.Popen(["xdg-open", str(target)])
+
     def _browse_cookies(self):
         filepath = filedialog.askopenfilename(
             title="选择 Cookies 文件",
@@ -842,8 +870,102 @@ class VideoScraperGUI(ctk.CTk):
             self._on_extract()
 
 
+def _get_install_dir() -> Path:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
+    else:
+        base = Path.home() / ".local" / "share"
+    return base / "VideoScraper"
+
+
+def _get_install_path() -> Path:
+    name = "video_scraper_gui.exe" if sys.platform == "win32" else "video_scraper_gui"
+    return _get_install_dir() / name
+
+
+def _try_show_running_gui() -> bool:
+    """尝试聚焦已运行的 GUI 实例，成功返回 True。"""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{VideoScraperGUI.API_PORT}/api/show")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _register_protocol_handler():
+    """注册 videoscraper:// 自定义协议处理器（仅打包环境下执行）。"""
+    if not getattr(sys, "frozen", False):
+        return
+
+    exe_path = _get_install_path().resolve()
+    if not exe_path.exists():
+        return
+
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key_path = r"Software\Classes\videoscraper"
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL:Video Scraper Protocol")
+                winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\shell\open\command") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
+        except Exception:
+            pass
+    else:
+        desktop_dir = Path.home() / ".local" / "share" / "applications"
+        desktop_dir.mkdir(parents=True, exist_ok=True)
+        desktop_file = desktop_dir / "videoscraper.desktop"
+        desktop_file.write_text(
+            "[Desktop Entry]\n"
+            "Name=Video Scraper\n"
+            f"Exec={exe_path} %u\n"
+            "Type=Application\n"
+            "MimeType=x-scheme-handler/videoscraper;\n"
+            "NoDisplay=true\n"
+        )
+        try:
+            subprocess.run(
+                ["xdg-mime", "default", "videoscraper.desktop", "x-scheme-handler/videoscraper"],
+                check=False, capture_output=True,
+            )
+        except FileNotFoundError:
+            pass
+
+
 def main():
+    # 处理 videoscraper:// 协议启动参数
+    protocol_launch = any(arg.startswith("videoscraper://") for arg in sys.argv[1:])
+    if protocol_launch:
+        if _try_show_running_gui():
+            sys.exit(0)
+        # GUI 未运行，继续启动
+
+    # 打包环境下的安装/更新逻辑
+    if getattr(sys, "frozen", False):
+        current_path = Path(sys.executable).resolve()
+        install_path = _get_install_path().resolve()
+
+        if current_path != install_path:
+            # 当前不是从安装路径运行 → 执行安装/更新
+            install_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(current_path), str(install_path))
+            if sys.platform != "win32":
+                install_path.chmod(install_path.stat().st_mode | 0o755)
+            # 从安装路径启动
+            subprocess.Popen([str(install_path)])
+            sys.exit(0)
+
     app = VideoScraperGUI()
+
+    # 打包环境下注册协议处理器并显示版本信息
+    if getattr(sys, "frozen", False):
+        install_path = _get_install_path().resolve()
+        _register_protocol_handler()
+        app._log(f"Video Scraper v{APP_VERSION}，安装路径: {install_path}")
+
     app.mainloop()
 
 

@@ -18,11 +18,11 @@
 
 从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载，提供三个版本：
 
-| 版本 | 内容 | 体积 | 适合 |
-|------|------|------|------|
-| **full** | Node.js + ffmpeg | 94-182 MB | 一般用户，开箱即用 |
-| **standard** | 仅 ffmpeg | 61-141 MB | 不下载 YouTube 或已有 Node.js |
-| **lite** | 纯净版 | 27-49 MB | 系统已有全部依赖 |
+| 版本 | 内容 | Windows 体积 | Linux 体积 | 适合 |
+|------|------|-------------|-----------|------|
+| **full** | Node.js + ffmpeg | 94-97 MB | 113-118 MB | 一般用户，开箱即用 |
+| **standard** | 仅 ffmpeg | 61-65 MB | 72-77 MB | 不下载 YouTube 或已有 Node.js |
+| **lite** | 纯净版 | 27-31 MB | 44-49 MB | 系统已有全部依赖 |
 
 每个版本包含 4 个文件（Linux/Windows × CLI/GUI），文件名格式：`video_scraper[_gui]_{full|std|lite}_{linux|win}[.exe]`
 
@@ -217,7 +217,7 @@ python build.py --gui --bundle-node
 
 #### 方式一：从 Release 下载安装（推荐）
 
-1. 从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载 `video_scraper_extension_v1.0.zip`
+1. 从 [Releases](https://github.com/xnwang1999/video_scraper/releases) 页面下载 `video_scraper_extension_v1.1.zip`
 2. 解压 zip 文件到任意目录
 3. 打开浏览器扩展管理页面：
    - Chrome: 地址栏输入 `chrome://extensions/`
@@ -253,6 +253,7 @@ python build.py --gui --bundle-node
 | **画质选择** | 支持 best / 1080p / 720p / 480p / worst |
 | **端口配置** | 默认端口 9527，可在扩展弹窗中修改（需与 GUI 一致） |
 | **连接状态** | 绿色 = 已连接桌面端，红色 = 桌面端未启动 |
+| **打开 GUI** | 一键聚焦/启动 GUI；未安装时显示下载链接 |
 
 ### 注意事项
 
@@ -396,4 +397,4 @@ python build.py --bundle-node
 
 ## 致谢
 
-本项目借助 [Cursor](https://cursor.com) AI 辅助开发。
+本项目借助 [Claude Code](https://claude.com/claude-code) AI 辅助开发。

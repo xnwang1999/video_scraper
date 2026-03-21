@@ -12,6 +12,40 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("btnDownload").addEventListener("click", () => sendTask("download"));
   $("btnExtract").addEventListener("click", () => sendTask("extract"));
+
+  $("btnOpen").addEventListener("click", async () => {
+    try {
+      const resp = await fetch(`${API_BASE()}/api/show`, { signal: AbortSignal.timeout(2000) });
+      if (resp.ok) {
+        showMsg("已聚焦 GUI 窗口", "success");
+        return;
+      }
+    } catch {}
+    // GUI 未运行，尝试通过自定义协议启动
+    window.open("videoscraper://open", "_self");
+    showMsg("正在启动 GUI...", "");
+    // 等待 3 秒后检测是否启动成功
+    setTimeout(async () => {
+      try {
+        const resp = await fetch(`${API_BASE()}/api/health`, { signal: AbortSignal.timeout(2000) });
+        if (resp.ok) {
+          showMsg("GUI 已启动", "success");
+          return;
+        }
+      } catch {}
+      // GUI 未安装，显示下载链接
+      showMsg("未检测到 GUI，", "error");
+      const link = document.createElement("a");
+      link.textContent = "点击此处下载";
+      link.href = "#";
+      link.style.cssText = "color:#8ab4f8;text-decoration:underline;cursor:pointer";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: "https://github.com/xnwang1999/video_scraper/releases" });
+      });
+      $("msg").appendChild(link);
+    }, 8000);
+  });
 });
 
 async function checkServer() {
