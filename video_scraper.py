@@ -122,14 +122,49 @@ def _detect_js_runtimes() -> Dict:
     return runtimes
 
 
-def _get_ffmpeg_path() -> str:
+def _get_app_dir() -> Path:
+    """冻结时返回 exe 所在目录；脚本时返回脚本所在目录。"""
     if getattr(sys, "frozen", False):
-        base = Path(sys._MEIPASS)
-        name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-        bundled = base / "ffmpeg" / name
-        if bundled.exists():
-            return str(bundled)
-    return shutil.which("ffmpeg") or "ffmpeg"
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _default_download_dir() -> Path:
+    """绝对路径形式的默认下载目录：与 exe/脚本同级的 downloads/。"""
+    return _get_app_dir() / "downloads"
+
+
+def _get_ffmpeg_path() -> str:
+    name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    candidates: List[Path] = []
+
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", ""))
+        if str(meipass):
+            candidates.append(meipass / "ffmpeg" / name)
+            candidates.append(meipass / name)
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / "ffmpeg_bin" / name)
+        candidates.append(exe_dir / name)
+    else:
+        root = Path(__file__).resolve().parent
+        candidates.append(root / "ffmpeg_bin" / name)
+        candidates.append(root / "ffmpeg_bin" / "ffmpeg")
+
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+
+    found = shutil.which("ffmpeg")
+    return found or "ffmpeg"
+
+
+def _ffmpeg_available() -> bool:
+    """探测 ffmpeg 是否真正可用（文件存在 或 在 PATH 中）。"""
+    resolved = _get_ffmpeg_path()
+    if Path(resolved).is_file():
+        return True
+    return shutil.which(resolved) is not None
 
 
 class VideoScraper:
@@ -241,7 +276,39 @@ class VideoScraper:
             return f"{quality}video+{quality}audio/{quality}"
         return self.quality
 
-    def _build_ydl_opts(self, download: bool = False, output_path: str = "./downloads/") -> Dict:
+    def _ensure_output_dir(self, output_path: str) -> Path:
+        """规范化并确保下载目录存在。失败时给出绝对路径+建议。"""
+        p = Path(output_path).expanduser().resolve()
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            fallback = Path.home() / "Downloads" / "video_scraper"
+            self.logger.error(
+                f"无法创建下载目录 {p}（拒绝访问）。"
+                f"请在 GUI 里把\"下载路径\"改到可写位置，例如：{fallback}"
+            )
+            raise
+        return p
+
+    def _build_ydl_opts(self, download: bool = False, output_path: Optional[str] = None) -> Dict:
+        if output_path is None:
+            output_path = str(_default_download_dir())
+        ffmpeg_resolved = _get_ffmpeg_path()
+        has_ffmpeg = Path(ffmpeg_resolved).is_file() or shutil.which(ffmpeg_resolved) is not None
+        if self.audio_only and not has_ffmpeg:
+            raise RuntimeError(
+                "音频提取需要 ffmpeg，但未找到可用二进制。"
+                "请把 ffmpeg.exe 放到 exe 同目录或 ffmpeg_bin/ 下，或安装到系统 PATH。"
+            )
+        if has_ffmpeg:
+            fmt = self._quality_to_format()
+        else:
+            fmt = "best[ext=mp4]/best"
+            self.logger.warning(
+                "未找到 ffmpeg，已降级为单流下载（1080P/高码率可能不可用）。"
+                "请把 ffmpeg.exe 放到 exe 同目录或 ffmpeg_bin/ 下以恢复全画质支持。"
+            )
+
         opts: Dict = {
             "quiet": True,
             "no_warnings": True,
@@ -253,9 +320,10 @@ class VideoScraper:
             "concurrent_fragment_downloads": self.concurrent_fragments,
             "http_headers": {"User-Agent": self.session.headers["User-Agent"]},
             "proxy": self.proxy,
-            "format": self._quality_to_format(),
-            "ffmpeg_location": str(Path(_get_ffmpeg_path()).parent),
+            "format": fmt,
         }
+        if has_ffmpeg:
+            opts["ffmpeg_location"] = str(Path(ffmpeg_resolved).parent)
         opts["extractor_args"] = {
             "youtube": {"player_client": ["default"]},
             "generic": {"impersonate": [""]},
@@ -273,12 +341,12 @@ class VideoScraper:
             opts["progress_hooks"] = [self._ydl_progress_hook]
 
         if download:
-            Path(output_path).mkdir(parents=True, exist_ok=True)
+            resolved_dir = self._ensure_output_dir(output_path)
             opts["quiet"] = False
             opts["noprogress"] = False
             opts.update(
                 {
-                    "outtmpl": f"{output_path}/%(title).180B [%(id)s].%(ext)s",
+                    "outtmpl": str(resolved_dir / "%(title).180B [%(id)s].%(ext)s"),
                     "merge_output_format": "mp4",
                     "postprocessors": (
                         [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]
@@ -812,12 +880,14 @@ class VideoScraper:
         path = urlparse(url).path.lower()
         return path.endswith(".m3u8") or ".m3u8?" in url.lower()
 
-    def _manual_download(self, url: str, output_path: str = "./downloads/") -> bool:
+    def _manual_download(self, url: str, output_path: Optional[str] = None) -> bool:
         """直链下载（仅回退）。检测到 m3u8 时自动用 ffmpeg 转 mp4。"""
+        if output_path is None:
+            output_path = str(_default_download_dir())
         video_url = None
         file_path = None
         try:
-            Path(output_path).mkdir(parents=True, exist_ok=True)
+            resolved_dir = self._ensure_output_dir(output_path)
             video_info = self.extract_generic_video(url)
             if not video_info or not video_info.video_urls:
                 self.logger.error("未找到可下载直链。")
@@ -830,7 +900,7 @@ class VideoScraper:
 
             if m3u8_urls:
                 video_url = m3u8_urls[0]
-                file_path = Path(output_path) / f"{safe_title[:120]}.mp4"
+                file_path = resolved_dir / f"{safe_title[:120]}.mp4"
                 return self._download_m3u8(video_url, file_path, referer=self.referer or url)
 
             video_url = mp4_urls[0] if mp4_urls else video_info.video_urls[0]
@@ -838,7 +908,7 @@ class VideoScraper:
             maybe_name = Path(urlparse(video_url).path).name
             if "." in maybe_name:
                 ext = maybe_name.split(".")[-1][:8]
-            file_path = Path(output_path) / f"{safe_title[:120]}.{ext}"
+            file_path = resolved_dir / f"{safe_title[:120]}.{ext}"
             self.logger.info(f"直链下载: {video_url}")
 
             headers = {"Referer": self.referer or url, "User-Agent": self.session.headers["User-Agent"]}
@@ -903,9 +973,11 @@ class VideoScraper:
             self.logger.error(f"curl 下载失败: {exc}")
             return False
 
-    def download_video(self, url: str, output_path: str = "./downloads/") -> bool:
+    def download_video(self, url: str, output_path: Optional[str] = None) -> bool:
         """下载视频文件。yt-dlp 失败时自动回退到通用直链下载。"""
         self._check_stop()
+        if output_path is None:
+            output_path = str(_default_download_dir())
         if not HAS_YTDLP:
             self.logger.info("yt-dlp 不可用，直接使用通用直链下载。")
             return self._manual_download(url, output_path)
@@ -1102,10 +1174,12 @@ class VideoScraper:
         page_limit: int = 1,
         url_pattern: Optional[str] = None,
         css_selector: Optional[str] = None,
-        output_path: str = "./downloads/",
+        output_path: Optional[str] = None,
         delay: float = 2.0,
     ) -> Dict[str, bool]:
         """从列表页发现资源链接并批量下载。返回 {url: 是否成功}。"""
+        if output_path is None:
+            output_path = str(_default_download_dir())
         urls = self.discover_videos(
             url, limit=limit, page_limit=page_limit,
             url_pattern=url_pattern, css_selector=css_selector,
@@ -1167,7 +1241,7 @@ def main():
     parser.add_argument("--audio-only", action="store_true", help="仅下载音频（mp3）")
     parser.add_argument("--concurrent-fragments", type=int, default=4, help="分片并发下载数")
     parser.add_argument("--output", default="video_data.json", help="元数据输出 JSON 文件")
-    parser.add_argument("--download-path", default="./downloads/", help="下载路径")
+    parser.add_argument("--download-path", default=str(_default_download_dir()), help="下载路径（默认：exe/脚本同级 downloads/）")
 
     args = parser.parse_args()
     scraper = VideoScraper(

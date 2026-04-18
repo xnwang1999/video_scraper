@@ -18,7 +18,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from video_scraper import VideoScraper, StopRequested, _read_urls_from_file, APP_VERSION
+from video_scraper import VideoScraper, StopRequested, _read_urls_from_file, APP_VERSION, _default_download_dir
 
 # ── 色彩系统（light, dark）─────────────────────────────────────
 # customtkinter 接受 (light_value, dark_value) 元组，自动跟随主题切换
@@ -269,7 +269,7 @@ class VideoScraperGUI(ctk.CTk):
 
         r += 1
         self._label(card, "下载路径", r, 0)
-        self.download_path_var = ctk.StringVar(value="./downloads/")
+        self.download_path_var = ctk.StringVar(value=str(_default_download_dir()))
         self._entry(card, self.download_path_var).grid(row=r, column=1, sticky="ew", padx=6, pady=4)
         self._small_btn(card, "浏览", self._browse_download_path).grid(row=r, column=2, padx=(0, 4), pady=4)
         self._small_btn(card, "打开", self._open_download_dir).grid(row=r, column=3, padx=(0, 14), pady=4)
@@ -689,7 +689,7 @@ class VideoScraperGUI(ctk.CTk):
             self.download_path_var.set(path)
 
     def _open_download_dir(self):
-        path = self.download_path_var.get() or "./downloads/"
+        path = self.download_path_var.get() or str(_default_download_dir())
         target = Path(path).resolve()
         if not target.exists():
             target.mkdir(parents=True, exist_ok=True)
